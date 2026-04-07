@@ -1,0 +1,538 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>Таймеры и счетчики</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            user-select: none;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            background: #f5f5f5;
+            margin: 0;
+            padding: 16px;
+            padding-bottom: 100px;
+        }
+
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+
+        h1 {
+            font-size: 24px;
+            margin: 0;
+        }
+
+        .add-buttons {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        button {
+            background: #ffffff;
+            border: none;
+            padding: 10px 16px;
+            border-radius: 30px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            transition: 0.2s;
+        }
+
+        button.primary {
+            background: #31a24c;
+            color: white;
+        }
+
+        button.danger {
+            background: #e53935;
+            color: white;
+        }
+
+        .cards {
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+
+        .card {
+            background: white;
+            border-radius: 20px;
+            padding: 16px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+            transition: 0.2s;
+            border-left: 8px solid;
+        }
+
+        .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-bottom: 12px;
+        }
+
+        .card-title {
+            font-size: 18px;
+            font-weight: 600;
+            background: #f0f0f0;
+            padding: 4px 12px;
+            border-radius: 40px;
+            border: none;
+            font-family: inherit;
+            width: auto;
+            min-width: 120px;
+        }
+
+        .card-type {
+            font-size: 12px;
+            background: #e0e0e0;
+            padding: 4px 12px;
+            border-radius: 20px;
+        }
+
+        .value-area {
+            text-align: center;
+            margin: 16px 0;
+        }
+
+        .main-value {
+            font-size: 48px;
+            font-weight: 700;
+            font-family: monospace;
+        }
+
+        .timer-controls {
+            display: flex;
+            justify-content: center;
+            gap: 20px;
+            margin-top: 10px;
+        }
+
+        .counter-controls {
+            display: flex;
+            justify-content: center;
+            gap: 20px;
+            margin-top: 10px;
+        }
+
+        .edit-controls {
+            display: flex;
+            justify-content: center;
+            gap: 12px;
+            margin-top: 12px;
+            flex-wrap: wrap;
+        }
+
+        .color-picker {
+            width: 40px;
+            height: 40px;
+            border-radius: 30px;
+            border: none;
+            cursor: pointer;
+            background: transparent;
+        }
+
+        .delete-btn {
+            background: #ffebee;
+            color: #c62828;
+        }
+
+        button.small {
+            padding: 8px 16px;
+            font-size: 14px;
+        }
+
+        .empty {
+            text-align: center;
+            color: gray;
+            padding: 40px;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>⏱️ Таймеры + Счетчики</h1>
+        <div class="add-buttons">
+            <button id="addTimerBtn" class="primary">Таймер</button>
+            <button id="addCounterBtn" class="primary">Счетчик</button>
+            <button id="addHybridBtn" class="primary">Таймер + Счетчик</button>
+        </div>
+    </div>
+    <div id="cardsContainer" class="cards">
+        <div class="empty">Нажмите + чтобы добавить</div>
+    </div>
+
+    <script>
+        // ---------- Хранилище ----------
+        let items = []; // каждый элемент: { id, type, name, value, color, isRunning? (для таймера/гибрида), timerEndTime? }
+
+        // Загрузка из localStorage
+        function loadData() {
+            const saved = localStorage.getItem('timerCounterApp');
+            if (saved) {
+                items = JSON.parse(saved);
+                // Восстанавливаем активные интервалы (таймеры)
+                items.forEach(item => {
+                    if ((item.type === 'timer' || item.type === 'hybrid') && item.isRunning && item.timerEndTime) {
+                        const remaining = item.timerEndTime - Date.now();
+                        if (remaining > 0) {
+                            startTimerForItem(item.id, remaining);
+                        } else {
+                            // Таймер истек, сбрасываем
+                            item.isRunning = false;
+                            if (item.type === 'timer') item.value = 0;
+                            if (item.type === 'hybrid' && typeof item.value === 'object') {
+                                item.value.timer = 0;
+                            }
+                            delete item.timerEndTime;
+                            saveData();
+                            render();
+                        }
+                    } else {
+                        // Очищаем флаги, если что-то не так
+                        if (item.type === 'timer' || item.type === 'hybrid') {
+                            item.isRunning = false;
+                            delete item.timerEndTime;
+                        }
+                    }
+                });
+                saveData();
+            }
+        }
+
+        function saveData() {
+            // Перед сохранением убираем циклические ссылки (интервалы не храним)
+            const toSave = items.map(item => {
+                const copy = { ...item };
+                delete copy._interval;
+                return copy;
+            });
+            localStorage.setItem('timerCounterApp', JSON.stringify(toSave));
+        }
+
+        // Глобальные интервалы
+        const intervals = new Map(); // id -> interval
+
+        function stopTimerInterval(id) {
+            if (intervals.has(id)) {
+                clearInterval(intervals.get(id));
+                intervals.delete(id);
+            }
+        }
+
+        function startTimerForItem(id, initialMs) {
+            stopTimerInterval(id);
+            const item = items.find(i => i.id === id);
+            if (!item) return;
+            if (!item.isRunning) return;
+
+            let remainingMs = initialMs;
+            const updateTimer = () => {
+                if (!item.isRunning) {
+                    stopTimerInterval(id);
+                    return;
+                }
+                if (remainingMs <= 0) {
+                    // Таймер закончился
+                    item.isRunning = false;
+                    if (item.type === 'timer') item.value = 0;
+                    if (item.type === 'hybrid' && typeof item.value === 'object') {
+                        item.value.timer = 0;
+                    }
+                    delete item.timerEndTime;
+                    stopTimerInterval(id);
+                    saveData();
+                    render();
+                    // Вибрация если есть
+                    if (navigator.vibrate) navigator.vibrate(200);
+                } else {
+                    // Обновляем отображение
+                    if (item.type === 'timer') {
+                        item.value = Math.ceil(remainingMs / 1000);
+                    } else if (item.type === 'hybrid' && typeof item.value === 'object') {
+                        item.value.timer = Math.ceil(remainingMs / 1000);
+                    }
+                    saveData();
+                    render();
+                    remainingMs -= 1000;
+                }
+            };
+            updateTimer(); // сразу показать
+            const interval = setInterval(updateTimer, 1000);
+            intervals.set(id, interval);
+        }
+
+        function startTimer(id, seconds) {
+            const item = items.find(i => i.id === id);
+            if (!item) return;
+            if (item.isRunning) return;
+            if (seconds <= 0) return;
+            item.isRunning = true;
+            const endTime = Date.now() + seconds * 1000;
+            item.timerEndTime = endTime;
+            saveData();
+            startTimerForItem(id, seconds * 1000);
+            render();
+        }
+
+        function stopTimer(id) {
+            const item = items.find(i => i.id === id);
+            if (item && (item.type === 'timer' || item.type === 'hybrid')) {
+                item.isRunning = false;
+                delete item.timerEndTime;
+                stopTimerInterval(id);
+                saveData();
+                render();
+            }
+        }
+
+        // ----- Вспомогательные функции -----
+        function formatTime(sec) {
+            if (sec === undefined) return "0с";
+            const h = Math.floor(sec / 3600);
+            const m = Math.floor((sec % 3600) / 60);
+            const s = sec % 60;
+            if (h > 0) return `${h}ч ${m}м ${s}с`;
+            if (m > 0) return `${m}м ${s}с`;
+            return `${s}с`;
+        }
+
+        // Редактирование (+/-)
+        function editValue(id, delta) {
+            const item = items.find(i => i.id === id);
+            if (!item) return;
+            if (item.type === 'timer') {
+                if (!item.isRunning) {
+                    let newVal = item.value + delta;
+                    if (newVal < 0) newVal = 0;
+                    item.value = newVal;
+                }
+            } else if (item.type === 'counter') {
+                let newVal = item.value + delta;
+                if (newVal < 0) newVal = 0;
+                item.value = newVal;
+            } else if (item.type === 'hybrid') {
+                if (typeof item.value === 'number') {
+                    // миграция
+                    item.value = { counter: item.value, timer: 0 };
+                }
+                if (!item.isRunning) {
+                    let newTimer = item.value.timer + delta;
+                    if (newTimer < 0) newTimer = 0;
+                    item.value.timer = newTimer;
+                }
+            }
+            saveData();
+            render();
+        }
+
+        function editCounterDirect(id, delta) {
+            const item = items.find(i => i.id === id);
+            if (!item) return;
+            if (item.type === 'counter') {
+                let newVal = item.value + delta;
+                if (newVal < 0) newVal = 0;
+                item.value = newVal;
+            } else if (item.type === 'hybrid') {
+                if (typeof item.value === 'object') {
+                    let newCounter = item.value.counter + delta;
+                    if (newCounter < 0) newCounter = 0;
+                    item.value.counter = newCounter;
+                } else {
+                    item.value = { counter: (item.value || 0) + delta, timer: 0 };
+                }
+            }
+            saveData();
+            render();
+        }
+
+        function changeName(id, newName) {
+            const item = items.find(i => i.id === id);
+            if (item) item.name = newName;
+            saveData();
+            render();
+        }
+
+        function changeColor(id, color) {
+            const item = items.find(i => i.id === id);
+            if (item) item.color = color;
+            saveData();
+            render();
+        }
+
+        function deleteItem(id) {
+            stopTimerInterval(id);
+            items = items.filter(i => i.id !== id);
+            saveData();
+            render();
+        }
+
+        // Создание
+        function addTimer() {
+            const id = Date.now() + Math.random();
+            items.push({
+                id: id,
+                type: 'timer',
+                name: 'Таймер',
+                value: 0,
+                color: '#31a24c',
+                isRunning: false
+            });
+            saveData();
+            render();
+        }
+
+        function addCounter() {
+            const id = Date.now() + Math.random();
+            items.push({
+                id: id,
+                type: 'counter',
+                name: 'Счетчик',
+                value: 0,
+                color: '#2196f3',
+            });
+            saveData();
+            render();
+        }
+
+        function addHybrid() {
+            const id = Date.now() + Math.random();
+            items.push({
+                id: id,
+                type: 'hybrid',
+                name: 'Гибрид',
+                value: { counter: 0, timer: 0 },
+                color: '#9c27b0',
+                isRunning: false
+            });
+            saveData();
+            render();
+        }
+
+        // ----- Рендер -----
+        function render() {
+            const container = document.getElementById('cardsContainer');
+            if (items.length === 0) {
+                container.innerHTML = '<div class="empty">✨ Нажмите кнопку выше, чтобы добавить</div>';
+                return;
+            }
+
+            container.innerHTML = items.map(item => {
+                const borderColor = item.color || '#cccccc';
+                let mainDisplay = '';
+                let controls = '';
+
+                if (item.type === 'timer') {
+                    const valSec = item.value || 0;
+                    mainDisplay = `<div class="main-value">${formatTime(valSec)}</div>`;
+                    controls = `
+                        <div class="timer-controls">
+                            ${!item.isRunning ? `<button class="small primary" onclick="window.startTimerById(${item.id}, ${valSec})">▶️ Старт</button>` : `<button class="small danger" onclick="window.stopTimerById(${item.id})">⏸️ Стоп</button>`}
+                        </div>
+                        <div class="edit-controls">
+                            <button class="small" onclick="window.editValueById(${item.id}, -10)">-10с</button>
+                            <button class="small" onclick="window.editValueById(${item.id}, -1)">-1с</button>
+                            <button class="small" onclick="window.editValueById(${item.id}, 1)">+1с</button>
+                            <button class="small" onclick="window.editValueById(${item.id}, 10)">+10с</button>
+                        </div>
+                    `;
+                } 
+                else if (item.type === 'counter') {
+                    mainDisplay = `<div class="main-value">${item.value}</div>`;
+                    controls = `
+                        <div class="counter-controls">
+                            <button class="small" onclick="window.editCounterById(${item.id}, -10)">-10</button>
+                            <button class="small" onclick="window.editCounterById(${item.id}, -1)">-1</button>
+                            <button class="small" onclick="window.editCounterById(${item.id}, 1)">+1</button>
+                            <button class="small" onclick="window.editCounterById(${item.id}, 10)">+10</button>
+                        </div>
+                    `;
+                } 
+                else if (item.type === 'hybrid') {
+                    const counterVal = (typeof item.value === 'object') ? item.value.counter : (item.value || 0);
+                    const timerVal = (typeof item.value === 'object') ? (item.value.timer || 0) : 0;
+                    mainDisplay = `
+                        <div style="font-size: 28px;">🔢 ${counterVal}</div>
+                        <div class="main-value" style="font-size: 32px;">⏱️ ${formatTime(timerVal)}</div>
+                    `;
+                    controls = `
+                        <div style="display:flex; gap: 12px; justify-content: center; margin-top: 8px;">
+                            ${!item.isRunning ? `<button class="small primary" onclick="window.startTimerById(${item.id}, ${timerVal})">▶️ Старт таймера</button>` : `<button class="small danger" onclick="window.stopTimerById(${item.id})">⏸️ Стоп</button>`}
+                        </div>
+                        <div class="edit-controls">
+                            <span style="font-size:12px;">Счетчик:</span>
+                            <button class="small" onclick="window.editCounterById(${item.id}, -10)">-10</button>
+                            <button class="small" onclick="window.editCounterById(${item.id}, -1)">-1</button>
+                            <button class="small" onclick="window.editCounterById(${item.id}, 1)">+1</button>
+                            <button class="small" onclick="window.editCounterById(${item.id}, 10)">+10</button>
+                        </div>
+                        <div class="edit-controls">
+                            <span style="font-size:12px;">Таймер (сек):</span>
+                            <button class="small" onclick="window.editValueById(${item.id}, -10)">-10</button>
+                            <button class="small" onclick="window.editValueById(${item.id}, -1)">-1</button>
+                            <button class="small" onclick="window.editValueById(${item.id}, 1)">+1</button>
+                            <button class="small" onclick="window.editValueById(${item.id}, 10)">+10</button>
+                        </div>
+                    `;
+                }
+
+                return `
+                    <div class="card" style="border-left-color: ${borderColor};">
+                        <div class="card-header">
+                            <input type="text" class="card-title" value="${escapeHtml(item.name)}" onchange="window.changeNameById(${item.id}, this.value)">
+                            <span class="card-type">${item.type === 'timer' ? '⏲️ Таймер' : item.type === 'counter' ? '🔢 Счетчик' : '🌀 Таймер+Счетчик'}</span>
+                        </div>
+                        <div class="value-area">
+                            ${mainDisplay}
+                        </div>
+                        ${controls}
+                        <div class="edit-controls" style="margin-top: 16px; justify-content: space-between;">
+                            <input type="color" class="color-picker" value="${item.color || '#cccccc'}" onchange="window.changeColorById(${item.id}, this.value)">
+                            <button class="delete-btn small" onclick="window.deleteItemById(${item.id})">🗑️ Удалить</button>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function escapeHtml(str) {
+            return str.replace(/[&<>]/g, function(m) {
+                if (m === '&') return '&amp;';
+                if (m === '<') return '&lt;';
+                if (m === '>') return '&gt;';
+                return m;
+            });
+        }
+
+        // Глобальные функции для onclick
+        window.startTimerById = (id, seconds) => startTimer(id, seconds);
+        window.stopTimerById = (id) => stopTimer(id);
+        window.editValueById = (id, delta) => editValue(id, delta);
+        window.editCounterById = (id, delta) => editCounterDirect(id, delta);
+        window.changeNameById = (id, name) => changeName(id, name);
+        window.changeColorById = (id, color) => changeColor(id, color);
+        window.deleteItemById = (id) => deleteItem(id);
+
+        // Инициализация и кнопки
+        document.getElementById('addTimerBtn').onclick = addTimer;
+        document.getElementById('addCounterBtn').onclick = addCounter;
+        document.getElementById('addHybridBtn').onclick = addHybrid;
+
+        loadData();
+        render();
+    </script>
+</body>
+</html>

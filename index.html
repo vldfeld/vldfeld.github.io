@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-    <title>Таймер Про: Калькулятор</title>
+    <title>Таймер Про: Drag & Drop</title>
     <style>
         * { box-sizing: border-box; user-select: none; }
         body {
@@ -12,7 +12,6 @@
             display: flex; height: 100vh; overflow: hidden;
         }
         
-        /* Сайдбар */
         .sidebar { width: 320px; background: #1c1c1e; border-right: 1px solid #333; display: flex; flex-direction: column; }
         .sidebar-header { padding: 25px 20px; border-bottom: 1px solid #333; font-weight: 900; color: #007bff; font-size: 18px; }
         .sidebar-content { flex: 1; overflow-y: auto; padding: 15px; }
@@ -23,7 +22,6 @@
         .archive-day { padding: 10px 0; border-bottom: 1px solid #333; }
         .day-info { display: flex; justify-content: space-between; font-size: 13px; color: #fff; font-weight: 700; }
 
-        /* Контент */
         .main-content { flex: 1; overflow-y: auto; padding: 20px; display: flex; flex-direction: column; align-items: center; }
         .app-wrapper { width: 100%; max-width: 1000px; }
 
@@ -36,14 +34,26 @@
         .stat-item span { display: block; font-size: 11px; color: #fff; text-transform: uppercase; margin-bottom: 5px; font-weight: 900; }
         .stat-item b { font-size: 22px; color: #007bff; font-family: monospace; }
 
-        /* Карточки */
         #container { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 20px; width: 100%; }
-        .card { background: #1c1c1e; border-radius: 24px; padding: 20px; border-top: 5px solid #007bff; position: relative; }
+        
+        /* Стили для перетаскивания */
+        .card { 
+            background: #1c1c1e; border-radius: 24px; padding: 20px; 
+            border-top: 5px solid #007bff; position: relative; 
+            transition: transform 0.2s, opacity 0.2s;
+        }
+        .card.dragging { opacity: 0.5; transform: scale(0.95); }
+        .card.drag-over { border: 2px dashed #007bff; }
+        .reorder-mode .card { cursor: move; border-style: dashed; opacity: 0.8; }
+
         .main-val { font-size: 34px; font-weight: 900; text-align: center; margin: 10px 0; font-family: monospace; color: #fff; }
         .sub-val { font-size: 18px; text-align: center; color: #00fbff; margin-bottom: 15px; font-family: monospace; font-weight: 800; }
 
         button { border: none; border-radius: 14px; font-weight: 900; cursor: pointer; color: #fff; }
         .btn-add { background: #007bff; padding: 10px 15px; font-size: 12px; }
+        .btn-reorder { background: #5856d6; padding: 10px 15px; font-size: 12px; }
+        .btn-reorder.active { background: #ff9500; }
+        
         .btn-main { padding: 14px; font-size: 15px; width: 100%; margin-bottom: 5px; text-transform: uppercase; }
         .btn-small { padding: 10px; font-size: 20px; flex: 1; background: #333; }
         
@@ -51,23 +61,15 @@
         .modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.95); z-index: 1000; align-items: center; justify-content: center; }
         .modal.active { display: flex; }
         .numpad { background: #1c1c1e; padding: 25px; border-radius: 35px; width: 380px; border: 1px solid #444; }
-        
-        .numpad-display { 
-            background: #000; padding: 15px; border-radius: 20px; 
-            margin-bottom: 20px; text-align: right; min-height: 110px; 
-            display: flex; flex-direction: column; justify-content: center;
-            border: 1px solid #333;
-        }
+        .numpad-display { background: #000; padding: 15px; border-radius: 20px; margin-bottom: 20px; text-align: right; min-height: 110px; display: flex; flex-direction: column; justify-content: center; border: 1px solid #333; }
         #calc-history { font-size: 14px; color: #888; font-family: monospace; min-height: 1.2em; margin-bottom: 4px; }
         #preview-sign { font-size: 28px; font-weight: 900; margin-right: 10px; }
         #num-display { font-size: 38px; font-family: monospace; color: #fff; font-weight: 900; }
-
         .numpad-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
         .num-btn { background: #2c2c2e; color: #fff; width: 62px; height: 62px; border-radius: 50%; font-size: 24px; display: flex; align-items: center; justify-content: center; font-weight: 700; transition: 0.2s; }
-        .num-btn.active-plus { background: #007bff !important; color: #ffffff !important; }
-        .num-btn.active-minus { background: #ff3b30 !important; color: #ffffff !important; }
-        
-        .unit-btn { background: none; color: #fff; font-size: 16px; text-align: left; height: 62px; display: flex; align-items: center; font-weight: 900; border:none; cursor: pointer; }
+        .num-btn.active-plus { background: #007bff !important; }
+        .num-btn.active-minus { background: #ff3b30 !important; }
+        .unit-btn { background: none; color: #fff; font-size: 16px; text-align: left; height: 62px; display: flex; align-items: center; font-weight: 900; border:none; }
         .save-btns { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 25px; }
     </style>
 </head>
@@ -85,10 +87,11 @@
                 <div class="stat-item"><span>СЕГОДНЯ</span><b id="g-today-time">00:00:00</b> / <b id="g-today-count">0</b></div>
                 <div class="stat-item"><span>ОБЩИЙ ИТОГ</span><b id="g-all-time">00:00:00</b> / <b id="g-all-count">0</b></div>
             </div>
-            <div style="display:flex; gap: 10px; justify-content:center; margin-bottom: 30px;">
+            <div style="display:flex; gap: 10px; justify-content:center; margin-bottom: 30px; flex-wrap: wrap;">
                 <button class="btn-add" onclick="addItem('timer')">+ ТАЙМЕР</button>
                 <button class="btn-add" onclick="addItem('counter')">+ СЧЕТЧИК</button>
                 <button class="btn-add" onclick="addItem('hybrid')">+ ГИБРИД</button>
+                <button id="reorder-toggle" class="btn-reorder" onclick="toggleReorder()">ИЗМЕНИТЬ ПОРЯДОК</button>
             </div>
             <div id="container"></div>
         </div>
@@ -96,7 +99,7 @@
 
     <div id="modal" class="modal">
         <div class="numpad">
-            <div style="color:#fff; text-align:center; margin-bottom:15px; font-weight: 900; font-size: 14px;">КАЛЬКУЛЯТОР ВРЕМЕНИ</div>
+            <div style="color:#fff; text-align:center; margin-bottom:15px; font-weight: 900; font-size: 14px;">КАЛЬКУЛЯТОР</div>
             <div class="numpad-display">
                 <div id="calc-history"></div>
                 <div style="display:flex; align-items:center; justify-content: flex-end;">
@@ -105,39 +108,25 @@
                 </div>
             </div>
             <div class="numpad-grid">
-                <div class="num-btn" onclick="pressNum(7)">7</div>
-                <div class="num-btn" onclick="pressNum(8)">8</div>
-                <div class="num-btn" onclick="pressNum(9)">9</div>
-                <button class="unit-btn" onclick="applyUnit('d')">Дней</button>
-                <div class="num-btn" onclick="pressNum(4)">4</div>
-                <div class="num-btn" onclick="pressNum(5)">5</div>
-                <div class="num-btn" onclick="pressNum(6)">6</div>
-                <button class="unit-btn" onclick="applyUnit('h')">Часов</button>
-                <div class="num-btn" onclick="pressNum(1)">1</div>
-                <div class="num-btn" onclick="pressNum(2)">2</div>
-                <div class="num-btn" onclick="pressNum(3)">3</div>
-                <button class="unit-btn" onclick="applyUnit('m')">Минут</button>
-                <div class="num-btn" id="op-plus" onclick="setOp(1)" style="font-size:32px;">+</div>
-                <div class="num-btn" onclick="pressNum(0)">0</div>
-                <div class="num-btn" id="op-minus" onclick="setOp(-1)" style="font-size:32px;">−</div>
-                <button class="unit-btn" onclick="applyUnit('s')">Секунд</button>
+                <div class="num-btn" onclick="pressNum(7)">7</div><div class="num-btn" onclick="pressNum(8)">8</div><div class="num-btn" onclick="pressNum(9)">9</div><button class="unit-btn" onclick="applyUnit('d')">Дней</button>
+                <div class="num-btn" onclick="pressNum(4)">4</div><div class="num-btn" onclick="pressNum(5)">5</div><div class="num-btn" onclick="pressNum(6)">6</div><button class="unit-btn" onclick="applyUnit('h')">Часов</button>
+                <div class="num-btn" onclick="pressNum(1)">1</div><div class="num-btn" onclick="pressNum(2)">2</div><div class="num-btn" onclick="pressNum(3)">3</div><button class="unit-btn" onclick="applyUnit('m')">Минут</button>
+                <div class="num-btn" id="op-plus" onclick="setOp(1)">+</div><div class="num-btn" onclick="pressNum(0)">0</div><div class="num-btn" id="op-minus" onclick="setOp(-1)">−</div><button class="unit-btn" onclick="applyUnit('s')">Сек</button>
             </div>
             <div class="save-btns">
-                <button class="btn-main" style="background:#28a745; border-radius:18px;" onclick="saveNumpad(1)">ПЛЮС К ТАЙМЕРУ</button>
-                <button class="btn-main" style="background:#dc3545; border-radius:18px;" onclick="saveNumpad(-1)">МИНУС ИЗ ТАЙМЕРА</button>
+                <button class="btn-main" style="background:#28a745; border-radius:18px;" onclick="saveNumpad(1)">ПЛЮС</button>
+                <button class="btn-main" style="background:#dc3545; border-radius:18px;" onclick="saveNumpad(-1)">МИНУС</button>
             </div>
-            <button class="btn-main" style="background:#333; color:#fff; border-radius:15px; margin-top:10px;" onclick="resetNumpad()">СБРОСИТЬ ВВОД</button>
-            <button class="btn-main" style="background:none; color:#fff; font-weight: 400; font-size:12px;" onclick="closeModal()">ОТМЕНА</button>
+            <button class="btn-main" style="background:#333; margin-top:10px;" onclick="resetNumpad()">СБРОС</button>
+            <button class="btn-main" style="background:none;" onclick="closeModal()">ОТМЕНА</button>
         </div>
     </div>
 
     <script>
         let items = JSON.parse(localStorage.getItem('timer_calc_v8') || '[]');
         let activeId = null;
-        let currentRaw = ""; 
-        let currentOp = null; 
-        let totalAccumulatedSeconds = 0;
-        let historyString = "";
+        let isReorderMode = false;
+        let currentRaw = "", currentOp = null, totalAccumulatedSeconds = 0, historyString = "";
 
         function saveData() {
             localStorage.setItem('timer_calc_v8', JSON.stringify(items.map(i => {
@@ -146,11 +135,27 @@
             renderArchive();
         }
 
+        function toggleReorder() {
+            isReorderMode = !isReorderMode;
+            const btn = document.getElementById('reorder-toggle');
+            const container = document.getElementById('container');
+            
+            if (isReorderMode) {
+                btn.innerText = "ГОТОВО";
+                btn.classList.add('active');
+                container.classList.add('reorder-mode');
+            } else {
+                btn.innerText = "ИЗМЕНИТЬ ПОРЯДОК";
+                btn.classList.remove('active');
+                container.classList.remove('reorder-mode');
+            }
+            render();
+        }
+
         function addItem(type) {
             items.push({
                 id: Date.now(), type, name: type.toUpperCase(),
-                value: 0, subValue: 0, 
-                totalTime: 0, totalCount: 0, todayTime: 0, todayCount: 0,
+                value: 0, subValue: 0, totalTime: 0, totalCount: 0, todayTime: 0, todayCount: 0,
                 history: [], isRunning: false, color: '#007bff'
             });
             saveData(); render();
@@ -164,84 +169,82 @@
             return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${sec.toString().padStart(2, '0')}`;
         }
 
-        /* Функции для кнопок счетчика */
         function updateCounter(id, delta) {
+            if (isReorderMode) return;
             const item = items.find(i => i.id === id);
-            if (!item) return;
             item.value += delta;
             if (delta > 0) record(item, 0, delta);
             saveData(); render();
         }
 
-        function openNumpad(id) {
-            activeId = id; resetNumpad();
-            document.getElementById('modal').classList.add('active');
+        /* --- DRAG & DROP LOGIC --- */
+        let draggedItemId = null;
+
+        function handleDragStart(e, id) {
+            if (!isReorderMode) return;
+            draggedItemId = id;
+            e.currentTarget.classList.add('dragging');
         }
 
-        function resetNumpad() {
-            currentRaw = ""; currentOp = null; totalAccumulatedSeconds = 0; historyString = "";
-            updateNumpadUI();
+        function handleDragEnd(e) {
+            e.currentTarget.classList.remove('dragging');
+            document.querySelectorAll('.card').forEach(c => c.classList.remove('drag-over'));
         }
 
-        function setOp(op) {
-            currentOp = op;
-            updateNumpadUI();
+        function handleDragOver(e) {
+            if (!isReorderMode) return;
+            e.preventDefault();
+            e.currentTarget.classList.add('drag-over');
         }
 
-        function pressNum(n) {
-            currentRaw += n;
-            updateNumpadUI();
+        function handleDragLeave(e) {
+            e.currentTarget.classList.remove('drag-over');
         }
 
-        function applyUnit(unit) {
-            if (currentOp === null) { alert("Сначала выберите + или −"); return; }
-            let val = parseInt(currentRaw || 0);
-            let sec = 0;
-            if (unit === 'd') sec = val * 86400;
-            else if (unit === 'h') sec = val * 3600;
-            else if (unit === 'm') sec = val * 60;
-            else sec = val;
-
-            const prevTotal = totalAccumulatedSeconds;
-            totalAccumulatedSeconds += (sec * currentOp);
-            const unitLabel = {d:'дн', h:'ч', m:'мин', s:'сек'}[unit];
-            historyString = `${formatTime(prevTotal)} ${currentOp > 0 ? '+':'-'} ${val}${unitLabel} = ${formatTime(totalAccumulatedSeconds)}`;
-            currentRaw = ""; 
-            updateNumpadUI();
-        }
-
-        function updateNumpadUI() {
-            const signEl = document.getElementById('preview-sign');
-            const displayEl = document.getElementById('num-display');
-            const historyEl = document.getElementById('calc-history');
-            const plusBtn = document.getElementById('op-plus');
-            const minusBtn = document.getElementById('op-minus');
-
-            plusBtn.className = "num-btn" + (currentOp === 1 ? " active-plus" : "");
-            minusBtn.className = "num-btn" + (currentOp === -1 ? " active-minus" : "");
-            signEl.innerText = currentOp === 1 ? "+" : (currentOp === -1 ? "−" : "");
-            signEl.style.color = currentOp === 1 ? "#007bff" : "#ff3b30";
-            historyEl.innerText = historyString;
+        function handleDrop(e, targetId) {
+            if (!isReorderMode || draggedItemId === targetId) return;
             
-            if (currentRaw !== "") displayEl.innerText = currentRaw;
-            else displayEl.innerText = formatTime(totalAccumulatedSeconds);
+            const draggedIdx = items.findIndex(i => i.id === draggedItemId);
+            const targetIdx = items.findIndex(i => i.id === targetId);
+            
+            const [removed] = items.splice(draggedIdx, 1);
+            items.splice(targetIdx, 0, removed);
+            
+            saveData();
+            render();
         }
 
-        function saveNumpad(finalBtnDir) {
+        /* --- Остальные функции --- */
+        function openNumpad(id) { activeId = id; resetNumpad(); document.getElementById('modal').classList.add('active'); }
+        function closeModal() { document.getElementById('modal').classList.remove('active'); }
+        function resetNumpad() { currentRaw = ""; currentOp = null; totalAccumulatedSeconds = 0; historyString = ""; updateNumpadUI(); }
+        function setOp(op) { currentOp = op; updateNumpadUI(); }
+        function pressNum(n) { currentRaw += n; updateNumpadUI(); }
+        function applyUnit(unit) {
+            if (currentOp === null) return;
+            let val = parseInt(currentRaw || 0);
+            let sec = (unit==='d')?val*86400:(unit==='h')?val*3600:(unit==='m')?val*60:val;
+            totalAccumulatedSeconds += (sec * currentOp);
+            currentRaw = ""; updateNumpadUI();
+        }
+        function updateNumpadUI() {
+            document.getElementById('op-plus').className = "num-btn" + (currentOp === 1 ? " active-plus" : "");
+            document.getElementById('op-minus').className = "num-btn" + (currentOp === -1 ? " active-minus" : "");
+            document.getElementById('num-display').innerText = currentRaw || formatTime(totalAccumulatedSeconds);
+        }
+
+        function saveNumpad(dir) {
             const item = items.find(i => i.id === activeId);
-            if (currentRaw !== "" && currentOp !== null) {
-                totalAccumulatedSeconds += (parseInt(currentRaw) * currentOp);
-            }
-            const result = totalAccumulatedSeconds * finalBtnDir;
-            if (item.type === 'counter') item.value += result;
-            else if (item.type === 'hybrid') item.subValue += result;
-            else item.value += result;
+            if (currentRaw !== "" && currentOp !== null) totalAccumulatedSeconds += (parseInt(currentRaw) * currentOp);
+            const res = totalAccumulatedSeconds * dir;
+            if (item.type === 'counter') item.value += res;
+            else if (item.type === 'hybrid') item.subValue += res;
+            else item.value += res;
             closeModal(); saveData(); render();
         }
 
-        function closeModal() { document.getElementById('modal').classList.remove('active'); }
-
         function toggleTimer(id) {
+            if (isReorderMode) return;
             const item = items.find(i => i.id === id);
             if (item.isRunning) {
                 clearInterval(item.interval); item.isRunning = false;
@@ -270,33 +273,43 @@
             content.innerHTML = '';
             const tree = {};
             items.forEach(it => it.history.forEach(s => {
-                const d = new Date(s.ts), y = d.getFullYear(), m = d.toLocaleString('ru', { month: 'long' }), day = d.toLocaleDateString('ru');
+                const d = new Date(s.ts), day = d.toLocaleDateString('ru'), m = d.toLocaleString('ru', { month: 'long' }), y = d.getFullYear();
                 if (!tree[y]) tree[y] = {}; if (!tree[y][m]) tree[y][m] = { t: 0, c: 0, days: {} };
                 if (!tree[y][m].days[day]) tree[y][m].days[day] = { t: 0, c: 0 };
-                tree[y][m].t += s.dt; tree[y][m].c += s.dc;
-                tree[y][m].days[day].t += s.dt; tree[y][m].days[day].c += s.dc;
+                tree[y][m].t += s.dt; tree[y][m].days[day].t += s.dt;
             }));
             Object.keys(tree).sort((a,b)=>b-a).forEach(y => {
-                let html = `<div class="archive-year">${y}`;
-                for (const m in tree[y]) {
-                    html += `<div class="archive-month"><span class="month-title">${m}</span><div style="font-size:11px; color:#007bff; font-weight:900;">∑ ${formatTime(tree[y][m].t)} / ${tree[y][m].c} кликов</div>`;
-                    for (const d in tree[y][m].days) {
-                        const ds = tree[y][m].days[d];
-                        html += `<div class="archive-day"><div class="day-info"><span>${d}</span> <span style="color:#007bff">+${formatTime(ds.t)}</span></div></div>`;
-                    }
-                    html += `</div>`;
+                let h = `<div class="archive-year">${y}`;
+                for (let m in tree[y]) {
+                    h += `<div class="archive-month"><span class="month-title">${m}</span>`;
+                    for (let d in tree[y][m].days) h += `<div class="archive-day"><div class="day-info"><span>${d}</span><span style="color:#007bff">+${formatTime(tree[y][m].days[d].t)}</span></div></div>`;
+                    h += `</div>`;
                 }
-                html += `</div>`;
-                content.innerHTML += html;
+                content.innerHTML += h + `</div>`;
             });
         }
 
         function render() {
             const container = document.getElementById('container'); container.innerHTML = '';
             let gtT = 0, gtC = 0, gaT = 0, gaC = 0;
+            
             items.forEach(item => {
                 gtT += item.todayTime; gtC += item.todayCount; gaT += item.totalTime; gaC += item.totalCount;
-                const card = document.createElement('div'); card.className = 'card'; card.style.borderTopColor = item.color;
+                
+                const card = document.createElement('div');
+                card.className = 'card';
+                card.style.borderTopColor = item.color;
+                
+                // Атрибуты Drag & Drop
+                if (isReorderMode) {
+                    card.draggable = true;
+                    card.ondragstart = (e) => handleDragStart(e, item.id);
+                    card.ondragend = handleDragEnd;
+                    card.ondragover = handleDragOver;
+                    card.ondragleave = handleDragLeave;
+                    card.ondrop = (e) => handleDrop(e, item.id);
+                }
+
                 let body = '';
                 if (item.type === 'timer') {
                     body = `<div class="main-val">${formatTime(item.value)}</div><button class="btn-main" style="background:${item.isRunning ? '#ff3b30':'#007bff'}" onclick="toggleTimer(${item.id})">${item.isRunning ? 'ПАУЗА':'СТАРТ'}</button>`;
@@ -307,6 +320,7 @@
                             <button class="btn-main" style="background:${item.isRunning ? '#ff3b30':'#007bff'}" onclick="toggleTimer(${item.id})">${item.isRunning ? 'ПАУЗА':'СТАРТ'}</button>
                             <div style="display:flex; gap:10px;"><button class="btn-small" onclick="updateCounter(${item.id}, 1)">+</button><button class="btn-small" onclick="updateCounter(${item.id}, -1)">-</button></div>`;
                 }
+                
                 card.innerHTML = `
                     <div style="display:flex; justify-content:space-between; align-items:center;">
                         <input style="background:none; border:none; color:#fff; font-weight:900; outline:none; font-size:16px;" value="${item.name}" onchange="items.find(i=>i.id==${item.id}).name=this.value; saveData()">
